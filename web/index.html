@@ -19,7 +19,7 @@
         <label>Como podemos chamar você?<input id="name" maxlength="24" placeholder="Seu nome" autocomplete="name"></label>
         <button id="join" class="button button-primary">Entrar na sala</button>
         <p id="join-error" class="notice" aria-live="polite"></p>
-        <p class="hint">O anfitrião entra primeiro. A sala aceita até quatro pessoas.</p>
+        <p class="hint">O anfitrião entra primeiro. A sala aceita até 12 pessoas.</p>
       </section>
       <section id="room" hidden>
         <div class="room-intro">
@@ -36,9 +36,9 @@
       </section>
     </main>
     <template id="screen-template">
-      <article class="screen"><div class="screen-title"><span class="live-indicator"><i></i><span class="screen-state">Aguardando</span></span><strong></strong><div class="screen-tools"><button class="tool-button focus" type="button" aria-pressed="false">Focar</button><button class="tool-button mute" type="button" aria-pressed="false">Silenciar</button><button class="tool-button up" type="button">Mover antes</button><button class="tool-button down" type="button">Mover depois</button><button class="tool-button fullscreen" type="button">Tela cheia</button></div></div><video autoplay playsinline></video><p class="empty">Aguardando compartilhamento</p></article>
+      <article class="screen"><div class="screen-title"><span class="live-indicator"><i></i><span class="screen-state">Aguardando</span></span><strong></strong><div class="screen-tools"><button class="tool-button focus" type="button" aria-label="Focar transmissão" data-tooltip="Focar" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3M8 21H5a2 2 0 0 1-2-2v-3m18 0v3a2 2 0 0 1-2 2h-3"/></svg></button><button class="tool-button mute" type="button" aria-label="Silenciar transmissão" data-tooltip="Silenciar" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4V5Zm4.5 4.5a5 5 0 0 1 0 5M18 7a8 8 0 0 1 0 10"/></svg></button><button class="tool-button up" type="button" aria-label="Mover transmissão antes" data-tooltip="Mover antes"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 14 5-5 5 5"/></svg></button><button class="tool-button down" type="button" aria-label="Mover transmissão depois" data-tooltip="Mover depois"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg></button><button class="tool-button fullscreen" type="button" aria-label="Abrir em tela cheia" data-tooltip="Tela cheia"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3M8 21H5a2 2 0 0 1-2-2v-3m18 0v3a2 2 0 0 1-2 2h-3"/></svg></button></div></div><video autoplay playsinline></video><p class="empty">Aguardando compartilhamento</p></article>
     </template>
     <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
-    <script type="module" src="./app.js?v=premium-room-1"></script>
+    <script type="module" src="./app.js?v=room-controls-2"></script>
   </body>
 </html>

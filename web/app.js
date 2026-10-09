@@ -1,7 +1,7 @@
 const params = new URLSearchParams(location.search);
 const roomId = params.get('room');
 const isHost = params.get('host') === '1';
-const maxParticipants = 4;
+const maxParticipants = 12;
 
 const ui = {
   joinCard: document.querySelector('#join-card'), room: document.querySelector('#room'), name: document.querySelector('#name'),
@@ -61,17 +61,20 @@ function render() {
     item.querySelector('.fullscreen').addEventListener('click', () => item.requestFullscreen?.());
     const focus = item.querySelector('.focus');
     focus.setAttribute('aria-pressed', String(focusedPeerId === id));
-    focus.textContent = focusedPeerId === id ? 'Voltar' : 'Focar';
+    focus.setAttribute('aria-label', focusedPeerId === id ? 'Voltar à grade' : 'Focar transmissão');
+    focus.dataset.tooltip = focusedPeerId === id ? 'Voltar à grade' : 'Focar';
     focus.addEventListener('click', () => toggleFocus(id));
     const mute = item.querySelector('.mute');
     const video = item.querySelector('video');
     video.muted = id === localId;
     mute.setAttribute('aria-pressed', String(video.muted));
-    mute.textContent = video.muted ? 'Ativar som' : 'Silenciar';
+    mute.setAttribute('aria-label', video.muted ? 'Ativar som da transmissão' : 'Silenciar transmissão');
+    mute.dataset.tooltip = video.muted ? 'Ativar som' : 'Silenciar';
     mute.addEventListener('click', () => {
       video.muted = !video.muted;
       mute.setAttribute('aria-pressed', String(video.muted));
-      mute.textContent = video.muted ? 'Ativar som' : 'Silenciar';
+      mute.setAttribute('aria-label', video.muted ? 'Ativar som da transmissão' : 'Silenciar transmissão');
+      mute.dataset.tooltip = video.muted ? 'Ativar som' : 'Silenciar';
       video.play().catch(() => {});
     });
     item.querySelector('.up').addEventListener('click', () => moveStream(id, -1));
@@ -159,7 +162,7 @@ function connectToHost() {
   hostConnection.on('data', data => {
     if (data?.type === 'room-full') {
       roomJoined = false;
-      notify('A sala já chegou ao limite de quatro pessoas.');
+      notify(`A sala já chegou ao limite de ${maxParticipants} pessoas.`);
       hostConnection.close();
       return;
     }
