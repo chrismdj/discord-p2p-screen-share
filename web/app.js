@@ -224,19 +224,21 @@ function receiveCall(call) {
 }
 
 async function startSharing() {
-  const height = Number(ui.quality.value);
+  const [heightValue, fpsValue] = ui.quality.value.split('-');
+  const height = Number(heightValue);
+  const fps = Number(fpsValue);
   if (!navigator.mediaDevices?.getDisplayMedia) {
     notify('Este navegador permite assistir, mas não oferece compartilhamento de tela. Em celulares, essa função depende do navegador e do sistema.');
     return;
   }
   try {
     screenStream = await navigator.mediaDevices.getDisplayMedia({
-      video: { width: { ideal: height === 1080 ? 1920 : 1280 }, height: { ideal: height }, frameRate: { ideal: 30, max: 30 } },
+      video: { width: { ideal: height === 1080 ? 1920 : 1280 }, height: { ideal: height }, frameRate: { ideal: fps, max: fps } },
       audio: true,
     });
     setVideo(localId, screenStream);
     ui.share.textContent = 'Parar compartilhamento';
-    notify(`Transmitindo em até ${height}p / 30 fps. A qualidade real varia com a tela e a conexão.`);
+    notify(`Transmitindo em até ${height}p / ${fps} fps. A qualidade real varia com a tela e a conexão.`);
     screenStream.getVideoTracks()[0].addEventListener('ended', stopSharing, { once: true });
     callEveryone();
   } catch (error) {
