@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="theme-color" content="#101524">
+    <title>Telas P2P</title>
+    <link rel="stylesheet" href="./style.css">
+  </head>
+  <body>
+    <main>
+      <header>
+        <div><p class="eyebrow">DISCORD · WEBRTC · P2P</p><h1>Telas P2P</h1></div>
+        <span id="status" role="status">Preparando conexão…</span>
+      </header>
+
+      <section id="join-card" class="card">
+        <h2>Entrar na sessão</h2>
+        <p>Até quatro amigos podem assistir e transmitir telas diretamente entre os navegadores.</p>
+        <label>Seu nome <input id="name" maxlength="24" placeholder="Ex.: Chris" autocomplete="name"></label>
+        <button id="join">Entrar na sala</button>
+        <p class="hint">O anfitrião precisa abrir o link dele antes dos convidados.</p>
+      </section>
+
+      <section id="room" hidden>
+        <div class="toolbar card">
+          <div><strong id="room-label">Sala</strong><small id="participant-count">0 participantes</small></div>
+          <div class="controls">
+            <label class="quality">Qualidade
+              <select id="quality">
+                <option value="720">720p · 30 fps</option>
+                <option value="1080">1080p · 30 fps</option>
+              </select>
+            </label>
+            <button id="share" class="primary">Compartilhar minha tela</button>
+            <button id="leave" class="quiet">Sair</button>
+          </div>
+        </div>
+        <p id="notice" class="notice" aria-live="polite"></p>
+        <div id="screens" class="screens"></div>
+      </section>
+    </main>
+    <template id="screen-template">
+      <article class="screen card"><div class="screen-title"><span class="dot"></span><strong></strong></div><video autoplay playsinline></video><p class="empty">Aguardando compartilhamento…</p></article>
+    </template>
+    <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
