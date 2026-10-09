@@ -8,7 +8,7 @@ const ui = {
   join: document.querySelector('#join'), share: document.querySelector('#share'), leave: document.querySelector('#leave'),
   quality: document.querySelector('#quality'), status: document.querySelector('#status'), notice: document.querySelector('#notice'), joinError: document.querySelector('#join-error'),
   screens: document.querySelector('#screens'), count: document.querySelector('#participant-count'), roomLabel: document.querySelector('#room-label'),
-  grid: document.querySelector('#grid'), layoutHint: document.querySelector('#layout-hint'),
+  grid: document.querySelector('#grid'), layoutHint: document.querySelector('#layout-hint'), hiddenLives: document.querySelector('#hidden-lives'),
   template: document.querySelector('#screen-template'),
 };
 
@@ -20,16 +20,24 @@ const callRetries = new Map();
 const connections = new Map(); // only host needs these to announce membership
 let streamOrder = [];
 let focusedPeerId;
+const hiddenPeerIds = new Set();
+const mediaPreferences = new Map();
 
 function setStatus(text, problem = false) { ui.status.textContent = text; ui.status.classList.toggle('problem', problem); }
 function notify(text) { ui.notice.textContent = text; ui.joinError.textContent = text; }
 function hostId() { return `${roomId}-host`; }
 function personName(id) { return people.get(id) ?? (id === localId ? localName : 'Amigo'); }
+function preferencesFor(id) {
+  if (!mediaPreferences.has(id)) mediaPreferences.set(id, { muted: id === localId, volume: 1 });
+  return mediaPreferences.get(id);
+}
 
 function syncStreamOrder() {
   const active = [...people.keys()];
   streamOrder = [...streamOrder.filter(id => active.includes(id)), ...active.filter(id => !streamOrder.includes(id))];
   if (focusedPeerId && !active.includes(focusedPeerId)) focusedPeerId = undefined;
+  [...hiddenPeerIds].filter(id => !active.includes(id)).forEach(id => hiddenPeerIds.delete(id));
+  if (focusedPeerId && hiddenPeerIds.has(focusedPeerId)) focusedPeerId = undefined;
 }
 
 function moveStream(id, direction) {
@@ -45,6 +53,19 @@ function toggleFocus(id) {
   render();
 }
 
+function renderHiddenLives() {
+  const hidden = streamOrder.filter(id => hiddenPeerIds.has(id));
+  ui.hiddenLives.hidden = hidden.length === 0;
+  ui.hiddenLives.replaceChildren();
+  hidden.forEach(id => {
+    const button = document.createElement('button');
+    button.type = 'button'; button.className = 'restore-live';
+    button.textContent = `Mostrar ${personName(id)}`;
+    button.addEventListener('click', () => { hiddenPeerIds.delete(id); render(); });
+    ui.hiddenLives.append(button);
+  });
+}
+
 function render() {
   syncStreamOrder();
   ui.screens.replaceChildren();
@@ -52,7 +73,9 @@ function render() {
   ui.grid.setAttribute('aria-pressed', String(!focusedPeerId));
   ui.grid.textContent = focusedPeerId ? 'Voltar à grade' : 'Grade';
   ui.layoutHint.textContent = focusedPeerId ? `Foco em ${personName(focusedPeerId)}` : 'Escolha uma live para focar';
+  renderHiddenLives();
   streamOrder.forEach((id, index) => {
+    if (hiddenPeerIds.has(id)) return;
     const item = ui.template.content.firstElementChild.cloneNode(true);
     item.dataset.peerId = id;
     item.classList.toggle('focused', focusedPeerId === id);
@@ -64,19 +87,33 @@ function render() {
     focus.setAttribute('aria-label', focusedPeerId === id ? 'Voltar à grade' : 'Focar transmissão');
     focus.dataset.tooltip = focusedPeerId === id ? 'Voltar à grade' : 'Focar';
     focus.addEventListener('click', () => toggleFocus(id));
-    const mute = item.querySelector('.mute');
     const video = item.querySelector('video');
-    video.muted = id === localId;
-    mute.setAttribute('aria-pressed', String(video.muted));
-    mute.setAttribute('aria-label', video.muted ? 'Ativar som da transmissão' : 'Silenciar transmissão');
-    mute.dataset.tooltip = video.muted ? 'Ativar som' : 'Silenciar';
+    const preference = preferencesFor(id);
+    video.muted = preference.muted;
+    video.volume = preference.volume;
+    const mute = item.querySelector('.mute');
+    const updateMute = () => {
+      mute.setAttribute('aria-pressed', String(preference.muted));
+      mute.setAttribute('aria-label', preference.muted ? 'Ativar som da transmissão' : 'Silenciar transmissão');
+      mute.dataset.tooltip = preference.muted ? 'Ativar som' : 'Silenciar';
+    };
+    updateMute();
     mute.addEventListener('click', () => {
-      video.muted = !video.muted;
-      mute.setAttribute('aria-pressed', String(video.muted));
-      mute.setAttribute('aria-label', video.muted ? 'Ativar som da transmissão' : 'Silenciar transmissão');
-      mute.dataset.tooltip = video.muted ? 'Ativar som' : 'Silenciar';
+      preference.muted = !preference.muted;
+      video.muted = preference.muted;
+      updateMute();
       video.play().catch(() => {});
     });
+    const volume = item.querySelector('.volume');
+    volume.value = String(Math.round(preference.volume * 100));
+    volume.addEventListener('input', () => {
+      preference.volume = Number(volume.value) / 100;
+      video.volume = preference.volume;
+      if (preference.volume > 0 && preference.muted && id !== localId) preference.muted = false;
+      video.muted = preference.muted;
+      updateMute();
+    });
+    item.querySelector('.hide').addEventListener('click', () => { hiddenPeerIds.add(id); render(); });
     item.querySelector('.up').addEventListener('click', () => moveStream(id, -1));
     item.querySelector('.down').addEventListener('click', () => moveStream(id, 1));
     item.querySelector('.up').disabled = index === 0;
@@ -93,6 +130,9 @@ function setVideo(id, stream, remember = true) {
   const video = document.querySelector(`[data-peer-id="${CSS.escape(id)}"] video`);
   if (!video) return;
   video.srcObject = stream;
+  const preference = preferencesFor(id);
+  video.muted = preference.muted;
+  video.volume = preference.volume;
   video.play().catch(() => {});
   video.closest('.screen').classList.add('active');
   video.closest('.screen').querySelector('.screen-state').textContent = 'Ao vivo';
