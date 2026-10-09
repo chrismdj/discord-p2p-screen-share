@@ -11,10 +11,11 @@ const ui = {
   template: document.querySelector('#screen-template'),
 };
 
-let peer, localId, localName, screenStream, hostConnection, hostRetries = 0, roomJoined = false, hostRetryTimer, signallingRetries = 0;
+let peer, localId, localName, screenStream, hostConnection, hostRetries = 0, roomJoined = false, hostRetryTimer, signallingRetries = 0, signalRecoveryTimer, signalRecoveryAttempts = 0;
 const people = new Map(); // peerId -> display name
 const calls = new Map(); // `${direction}:${peerId}` -> media call
 const remoteStreams = new Map();
+const callRetries = new Map();
 const connections = new Map(); // only host needs these to announce membership
 
 function setStatus(text, problem = false) { ui.status.textContent = text; ui.status.classList.toggle('problem', problem); }
@@ -58,7 +59,14 @@ function callPeer(id) {
   const call = peer.call(id, screenStream, { metadata: { name: localName } });
   calls.set(key, call);
   call.on('close', () => calls.delete(key));
-  call.on('error', () => calls.delete(key));
+  call.on('error', () => {
+    calls.delete(key);
+    const retries = callRetries.get(id) || 0;
+    if (screenStream && people.has(id) && retries < 5) {
+      callRetries.set(id, retries + 1);
+      setTimeout(() => callPeer(id), 1000);
+    }
+  });
 }
 
 function callEveryone() { [...people.keys()].forEach(callPeer); }
@@ -121,6 +129,18 @@ function scheduleHostRetry(opened = false) {
   }, 1000);
 }
 
+function recoverSignalling(candidate) {
+  if (candidate !== peer || candidate.destroyed || signalRecoveryTimer || signalRecoveryAttempts >= 5) return;
+  signalRecoveryAttempts += 1;
+  setStatus(`Recuperando conexão P2P… (${signalRecoveryAttempts}/5)`);
+  notify('A conexão de sinalização caiu; reconectando sem interromper os compartilhamentos atuais.');
+  candidate.reconnect();
+  signalRecoveryTimer = setTimeout(() => {
+    signalRecoveryTimer = undefined;
+    if (candidate === peer && !candidate.open) recoverSignalling(candidate);
+  }, 1400);
+}
+
 function acceptConnection(connection) {
   connection.on('data', data => {
     if (data?.type !== 'hello') return;
@@ -178,19 +198,26 @@ function startPeer() {
   candidate.on('open', () => {
     if (candidate !== peer) return;
     opened = true;
+    signalRecoveryAttempts = 0;
+    clearTimeout(signalRecoveryTimer); signalRecoveryTimer = undefined;
     people.set(localId, localName); render();
     ui.joinCard.hidden = true; ui.room.hidden = false; ui.roomLabel.textContent = `Sala ${roomId.slice(0, 6)}`;
     setStatus(isHost ? 'Sala aberta — aguardando amigos' : 'Conectado à sala');
-    if (isHost) return;
-    connectToHost();
+    if (isHost) announcePeers(); else connectToHost();
+    if (screenStream) callEveryone();
   });
   candidate.on('connection', acceptConnection);
   candidate.on('call', receiveCall);
+  candidate.on('disconnected', () => { if (opened) recoverSignalling(candidate); });
   candidate.on('error', error => {
     if (candidate !== peer) return;
     if (!isHost && !roomJoined && (error.type === 'peer-unavailable' || /Could not connect to peer/.test(error.message))) {
       setStatus(`Procurando anfitrião… (${hostRetries}/15)`);
       scheduleHostRetry();
+      return;
+    }
+    if (opened && ['network', 'socket-error', 'server-error'].includes(error.type)) {
+      recoverSignalling(candidate);
       return;
     }
     if (!opened && error.type !== 'unavailable-id' && signallingRetries < 3) {
