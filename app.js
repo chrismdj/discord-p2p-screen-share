@@ -8,6 +8,7 @@ const ui = {
   join: document.querySelector('#join'), share: document.querySelector('#share'), leave: document.querySelector('#leave'),
   quality: document.querySelector('#quality'), status: document.querySelector('#status'), notice: document.querySelector('#notice'), joinError: document.querySelector('#join-error'),
   screens: document.querySelector('#screens'), count: document.querySelector('#participant-count'), roomLabel: document.querySelector('#room-label'),
+  grid: document.querySelector('#grid'), layoutHint: document.querySelector('#layout-hint'),
   template: document.querySelector('#screen-template'),
 };
 
@@ -17,19 +18,66 @@ const calls = new Map(); // `${direction}:${peerId}` -> media call
 const remoteStreams = new Map();
 const callRetries = new Map();
 const connections = new Map(); // only host needs these to announce membership
+let streamOrder = [];
+let focusedPeerId;
 
 function setStatus(text, problem = false) { ui.status.textContent = text; ui.status.classList.toggle('problem', problem); }
 function notify(text) { ui.notice.textContent = text; ui.joinError.textContent = text; }
 function hostId() { return `${roomId}-host`; }
 function personName(id) { return people.get(id) ?? (id === localId ? localName : 'Amigo'); }
 
+function syncStreamOrder() {
+  const active = [...people.keys()];
+  streamOrder = [...streamOrder.filter(id => active.includes(id)), ...active.filter(id => !streamOrder.includes(id))];
+  if (focusedPeerId && !active.includes(focusedPeerId)) focusedPeerId = undefined;
+}
+
+function moveStream(id, direction) {
+  const index = streamOrder.indexOf(id);
+  const destination = index + direction;
+  if (index < 0 || destination < 0 || destination >= streamOrder.length) return;
+  [streamOrder[index], streamOrder[destination]] = [streamOrder[destination], streamOrder[index]];
+  render();
+}
+
+function toggleFocus(id) {
+  focusedPeerId = focusedPeerId === id ? undefined : id;
+  render();
+}
+
 function render() {
+  syncStreamOrder();
   ui.screens.replaceChildren();
-  [...people.keys()].forEach(id => {
+  ui.screens.classList.toggle('focus-mode', Boolean(focusedPeerId));
+  ui.grid.setAttribute('aria-pressed', String(!focusedPeerId));
+  ui.grid.textContent = focusedPeerId ? 'Voltar à grade' : 'Grade';
+  ui.layoutHint.textContent = focusedPeerId ? `Foco em ${personName(focusedPeerId)}` : 'Escolha uma live para focar';
+  streamOrder.forEach((id, index) => {
     const item = ui.template.content.firstElementChild.cloneNode(true);
     item.dataset.peerId = id;
+    item.classList.toggle('focused', focusedPeerId === id);
+    item.classList.add('visible');
     item.querySelector('strong').textContent = id === localId ? `${personName(id)} (você)` : personName(id);
     item.querySelector('.fullscreen').addEventListener('click', () => item.requestFullscreen?.());
+    const focus = item.querySelector('.focus');
+    focus.setAttribute('aria-pressed', String(focusedPeerId === id));
+    focus.textContent = focusedPeerId === id ? 'Voltar' : 'Focar';
+    focus.addEventListener('click', () => toggleFocus(id));
+    const mute = item.querySelector('.mute');
+    const video = item.querySelector('video');
+    video.muted = id === localId;
+    mute.setAttribute('aria-pressed', String(video.muted));
+    mute.textContent = video.muted ? 'Ativar som' : 'Silenciar';
+    mute.addEventListener('click', () => {
+      video.muted = !video.muted;
+      mute.setAttribute('aria-pressed', String(video.muted));
+      mute.textContent = video.muted ? 'Ativar som' : 'Silenciar';
+      video.play().catch(() => {});
+    });
+    item.querySelector('.up').addEventListener('click', () => moveStream(id, -1));
+    item.querySelector('.down').addEventListener('click', () => moveStream(id, 1));
+    item.querySelector('.up').disabled = index === 0;
+    item.querySelector('.down').disabled = index === streamOrder.length - 1;
     ui.screens.append(item);
     const stream = id === localId ? screenStream : remoteStreams.get(id);
     if (stream) setVideo(id, stream, false);
@@ -42,7 +90,9 @@ function setVideo(id, stream, remember = true) {
   const video = document.querySelector(`[data-peer-id="${CSS.escape(id)}"] video`);
   if (!video) return;
   video.srcObject = stream;
+  video.play().catch(() => {});
   video.closest('.screen').classList.add('active');
+  video.closest('.screen').querySelector('.screen-state').textContent = 'Ao vivo';
 }
 
 function closeCall(id) {
@@ -58,15 +108,22 @@ function callPeer(id) {
   if (!screenStream || id === localId || calls.has(key)) return;
   const call = peer.call(id, screenStream, { metadata: { name: localName } });
   calls.set(key, call);
-  call.on('close', () => calls.delete(key));
+  call.on('close', () => {
+    calls.delete(key);
+    retryCall(id);
+  });
   call.on('error', () => {
     calls.delete(key);
-    const retries = callRetries.get(id) || 0;
-    if (screenStream && people.has(id) && retries < 5) {
-      callRetries.set(id, retries + 1);
-      setTimeout(() => callPeer(id), 1000);
-    }
+    retryCall(id);
   });
+}
+
+function retryCall(id) {
+  const retries = callRetries.get(id) || 0;
+  if (screenStream && people.has(id) && retries < 5) {
+    callRetries.set(id, retries + 1);
+    setTimeout(() => callPeer(id), 1000 + retries * 500);
+  }
 }
 
 function callEveryone() { [...people.keys()].forEach(callPeer); }
@@ -168,6 +225,10 @@ function receiveCall(call) {
 
 async function startSharing() {
   const height = Number(ui.quality.value);
+  if (!navigator.mediaDevices?.getDisplayMedia) {
+    notify('Este navegador permite assistir, mas não oferece compartilhamento de tela. Em celulares, essa função depende do navegador e do sistema.');
+    return;
+  }
   try {
     screenStream = await navigator.mediaDevices.getDisplayMedia({
       video: { width: { ideal: height === 1080 ? 1920 : 1280 }, height: { ideal: height }, frameRate: { ideal: 30, max: 30 } },
@@ -250,5 +311,10 @@ async function join() {
 ui.join.addEventListener('click', join);
 ui.name.addEventListener('keydown', event => { if (event.key === 'Enter') join(); });
 ui.share.addEventListener('click', () => screenStream ? stopSharing() : startSharing());
+ui.grid.addEventListener('click', () => { focusedPeerId = undefined; render(); });
 ui.leave.addEventListener('click', () => { stopSharing(); peer?.destroy(); location.href = 'about:blank'; });
 if (!roomId) setStatus('Abra o link recebido pelo Discord.', true);
+if (!navigator.mediaDevices?.getDisplayMedia) {
+  ui.share.disabled = true;
+  ui.share.title = 'Este navegador não oferece compartilhamento de tela.';
+}
