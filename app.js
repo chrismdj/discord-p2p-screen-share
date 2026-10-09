@@ -71,6 +71,29 @@ function renderHiddenLives() {
   });
 }
 
+function updateFullscreenControls() {
+  document.querySelectorAll('.screen').forEach(item => {
+    const button = item.querySelector('.fullscreen');
+    if (!button) return;
+    const active = document.fullscreenElement === item;
+    button.setAttribute('aria-pressed', String(active));
+    button.setAttribute('aria-label', active ? 'Sair da tela cheia' : 'Abrir em tela cheia');
+    button.dataset.tooltip = active ? 'Sair da tela cheia' : 'Tela cheia';
+  });
+}
+
+async function toggleFullscreen(item) {
+  try {
+    if (document.fullscreenElement === item) {
+      await document.exitFullscreen?.();
+    } else {
+      await item.requestFullscreen?.();
+    }
+  } catch (error) {
+    notify(`Não foi possível alternar a tela cheia: ${error.message}`);
+  }
+}
+
 function render() {
   syncStreamOrder();
   ui.screens.replaceChildren();
@@ -86,7 +109,8 @@ function render() {
     item.classList.toggle('focused', focusedPeerId === id);
     item.classList.add('visible');
     item.querySelector('strong').textContent = id === localId ? `${personName(id)} (você)` : personName(id);
-    item.querySelector('.fullscreen').addEventListener('click', () => item.requestFullscreen?.());
+    const fullscreen = item.querySelector('.fullscreen');
+    fullscreen.addEventListener('click', () => toggleFullscreen(item));
     const focus = item.querySelector('.focus');
     focus.setAttribute('aria-pressed', String(focusedPeerId === id));
     focus.setAttribute('aria-label', focusedPeerId === id ? 'Voltar à grade' : 'Focar transmissão');
@@ -127,6 +151,7 @@ function render() {
     const stream = id === localId ? screenStream : remoteStreams.get(id);
     if (stream) setVideo(id, stream, false);
   });
+  updateFullscreenControls();
   ui.count.textContent = `${people.size} de ${maxParticipants} participantes`;
 }
 
@@ -254,7 +279,11 @@ function acceptConnection(connection) {
     }
     people.set(connection.peer, data.name?.slice(0, 24) || 'Amigo');
     connections.set(connection.peer, connection);
-    render(); announcePeers();
+    render();
+    // Uma transmissão que já está ativa precisa abrir uma chamada para quem acabou
+    // de entrar; caso contrário, o convidado só a receberia ao reiniciar a live.
+    if (screenStream) callPeer(connection.peer);
+    announcePeers();
   });
   connection.on('close', () => {
     if (!isHost) return;
@@ -363,6 +392,7 @@ ui.name.addEventListener('keydown', event => { if (event.key === 'Enter') join()
 ui.share.addEventListener('click', () => screenStream ? stopSharing() : startSharing());
 ui.grid.addEventListener('click', () => { focusedPeerId = undefined; render(); });
 ui.leave.addEventListener('click', () => { stopSharing(); peer?.destroy(); location.href = 'about:blank'; });
+document.addEventListener('fullscreenchange', updateFullscreenControls);
 if (!roomId) setStatus('Abra o link recebido pelo Discord.', true);
 if (!navigator.mediaDevices?.getDisplayMedia) {
   ui.share.disabled = true;
