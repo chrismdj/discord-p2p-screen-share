@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import crypto from 'node:crypto';
-import { Client, Events, GatewayIntentBits } from 'discord.js';
+import { Client, Events, GatewayIntentBits, MessageFlags } from 'discord.js';
 
 const { DISCORD_TOKEN, APP_URL } = process.env;
 if (!DISCORD_TOKEN || !APP_URL) throw new Error('Set DISCORD_TOKEN and APP_URL in .env.');
@@ -13,19 +13,22 @@ client.once(Events.ClientReady, ready => console.log(`Bot conectado como ${ready
 client.on(Events.InteractionCreate, async interaction => {
   if (!interaction.isChatInputCommand() || interaction.commandName !== 'telas') return;
 
-  const room = crypto.randomBytes(9).toString('base64url');
-  const name = interaction.options.getString('nome') ?? 'Sala ao vivo';
-  const hostUrl = `${baseUrl}/index.html?room=${room}&host=1`;
-  const joinUrl = `${baseUrl}/index.html?room=${room}`;
+  try {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const room = crypto.randomBytes(9).toString('base64url');
+    const name = interaction.options.getString('nome') ?? 'Sala ao vivo';
+    const hostUrl = `${baseUrl}/index.html?room=${room}&host=1`;
+    const joinUrl = `${baseUrl}/index.html?room=${room}`;
 
-  await interaction.reply({
-    ephemeral: true,
-    content: `Você é o anfitrião de **${name}**. Abra este link primeiro:\n${hostUrl}\n\nDepois envie o convite abaixo para até 3 amigos.`,
-  });
-
-  await interaction.channel?.send({
-    content: `**${name}** foi criada por <@${interaction.user.id}>. Entre aqui: ${joinUrl}\n*Abra no navegador, informe seu nome e clique em “Entrar”. Cada pessoa escolhe quando compartilhar a própria tela.*`,
-  });
+    await interaction.editReply(`Você é o anfitrião de **${name}**. Abra este link primeiro:\n${hostUrl}\n\nDepois envie o convite abaixo para até 3 amigos.`);
+    await interaction.channel?.send({
+      content: `**${name}** foi criada por <@${interaction.user.id}>. Entre aqui: ${joinUrl}\n*Abra no navegador, informe seu nome e clique em “Entrar”. Cada pessoa escolhe quando compartilhar a própria tela.*`,
+    });
+  } catch (error) {
+    console.error('Não foi possível criar a sala:', error);
+  }
 });
+
+client.on('error', error => console.error('Erro do cliente Discord:', error));
 
 client.login(DISCORD_TOKEN);
