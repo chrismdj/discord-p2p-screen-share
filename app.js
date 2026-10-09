@@ -6,18 +6,18 @@ const maxParticipants = 4;
 const ui = {
   joinCard: document.querySelector('#join-card'), room: document.querySelector('#room'), name: document.querySelector('#name'),
   join: document.querySelector('#join'), share: document.querySelector('#share'), leave: document.querySelector('#leave'),
-  quality: document.querySelector('#quality'), status: document.querySelector('#status'), notice: document.querySelector('#notice'),
+  quality: document.querySelector('#quality'), status: document.querySelector('#status'), notice: document.querySelector('#notice'), joinError: document.querySelector('#join-error'),
   screens: document.querySelector('#screens'), count: document.querySelector('#participant-count'), roomLabel: document.querySelector('#room-label'),
   template: document.querySelector('#screen-template'),
 };
 
-let peer, localId, localName, screenStream, hostConnection, hostRetries = 0, roomJoined = false, hostRetryTimer;
+let peer, localId, localName, screenStream, hostConnection, hostRetries = 0, roomJoined = false, hostRetryTimer, signallingRetries = 0;
 const people = new Map(); // peerId -> display name
 const calls = new Map();
 const connections = new Map(); // only host needs these to announce membership
 
 function setStatus(text, problem = false) { ui.status.textContent = text; ui.status.classList.toggle('problem', problem); }
-function notify(text) { ui.notice.textContent = text; }
+function notify(text) { ui.notice.textContent = text; ui.joinError.textContent = text; }
 function hostId() { return `${roomId}-host`; }
 function personName(id) { return people.get(id) ?? (id === localId ? localName : 'Amigo'); }
 
@@ -158,30 +158,53 @@ function stopSharing() {
   ui.share.textContent = 'Compartilhar minha tela'; notify('Seu compartilhamento foi encerrado.');
 }
 
-async function join() {
-  if (!roomId) { setStatus('Link inválido: falta o identificador da sala.', true); return; }
-  localName = ui.name.value.trim() || 'Amigo';
-  localId = isHost ? hostId() : `${roomId}-${crypto.randomUUID().slice(0, 8)}`;
-  ui.join.disabled = true; setStatus('Conectando à sinalização…');
-  peer = new Peer(localId); // Usa o PeerJS Cloud apenas para sinalização; mídia permanece P2P.
-  peer.on('open', () => {
+function startPeer() {
+  const candidate = new Peer(localId); // Usa o PeerJS Cloud apenas para sinalização; mídia permanece P2P.
+  peer = candidate;
+  let opened = false;
+  candidate.on('open', () => {
+    if (candidate !== peer) return;
+    opened = true;
     people.set(localId, localName); render();
     ui.joinCard.hidden = true; ui.room.hidden = false; ui.roomLabel.textContent = `Sala ${roomId.slice(0, 6)}`;
     setStatus(isHost ? 'Sala aberta — aguardando amigos' : 'Conectado à sala');
     if (isHost) return;
     connectToHost();
   });
-  peer.on('connection', acceptConnection);
-  peer.on('call', receiveCall);
-  peer.on('error', error => {
+  candidate.on('connection', acceptConnection);
+  candidate.on('call', receiveCall);
+  candidate.on('error', error => {
+    if (candidate !== peer) return;
     if (!isHost && !roomJoined && (error.type === 'peer-unavailable' || /Could not connect to peer/.test(error.message))) {
       setStatus(`Procurando anfitrião… (${hostRetries}/15)`);
       scheduleHostRetry();
       return;
     }
+    if (!opened && error.type !== 'unavailable-id' && signallingRetries < 3) {
+      signallingRetries += 1;
+      setStatus(`Reconectando à sinalização… (${signallingRetries}/3)`);
+      notify('A conexão inicial falhou; tentando novamente automaticamente.');
+      peer = undefined;
+      candidate.destroy();
+      setTimeout(() => { if (!peer) startPeer(); }, 1200);
+      return;
+    }
     setStatus('Falha de conexão', true);
-    notify(error.type === 'unavailable-id' ? 'Esta sala já está ativa em outra aba.' : `Erro P2P: ${error.message}`);
+    ui.join.disabled = false;
+    notify(error.type === 'unavailable-id'
+      ? 'Esta sala já está aberta em outra aba ou navegador. Feche a outra aba e tente novamente.'
+      : `Não foi possível conectar à sinalização P2P (${error.type || 'rede'}). Verifique bloqueadores/VPN e tente novamente.`);
   });
+}
+
+async function join() {
+  if (!roomId) { setStatus('Link inválido: falta o identificador da sala.', true); return; }
+  localName = ui.name.value.trim() || 'Amigo';
+  localId = isHost ? hostId() : `${roomId}-${crypto.randomUUID().slice(0, 8)}`;
+  signallingRetries = 0;
+  ui.joinError.textContent = '';
+  ui.join.disabled = true; setStatus('Conectando à sinalização…');
+  startPeer();
 }
 
 ui.join.addEventListener('click', join);

@@ -19,6 +19,7 @@
         <p>Até quatro amigos podem assistir e transmitir telas diretamente entre os navegadores.</p>
         <label>Seu nome <input id="name" maxlength="24" placeholder="Ex.: Chris" autocomplete="name"></label>
         <button id="join">Entrar na sala</button>
+        <p id="join-error" class="notice" aria-live="polite"></p>
         <p class="hint">O anfitrião precisa abrir o link dele antes dos convidados.</p>
       </section>
 
@@ -44,6 +45,6 @@
       <article class="screen card"><div class="screen-title"><span class="dot"></span><strong></strong></div><video autoplay playsinline></video><p class="empty">Aguardando compartilhamento…</p></article>
     </template>
     <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
-    <script type="module" src="./app.js?v=retry-3"></script>
+    <script type="module" src="./app.js?v=retry-4"></script>
   </body>
 </html>
