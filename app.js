@@ -11,7 +11,7 @@ const ui = {
   template: document.querySelector('#screen-template'),
 };
 
-let peer, localId, localName, screenStream, hostConnection, hostRetries = 0, roomJoined = false;
+let peer, localId, localName, screenStream, hostConnection, hostRetries = 0, roomJoined = false, hostRetryTimer;
 const people = new Map(); // peerId -> display name
 const calls = new Map();
 const connections = new Map(); // only host needs these to announce membership
@@ -96,10 +96,15 @@ function connectToHost() {
     if (!opened && !roomJoined) retry();
   });
 
-  function retry() {
-    if (opened || roomJoined) return;
-    setTimeout(connectToHost, 1000);
-  }
+  function retry() { scheduleHostRetry(opened); }
+}
+
+function scheduleHostRetry(opened = false) {
+  if (opened || roomJoined || isHost || hostRetryTimer || hostRetries >= 15) return;
+  hostRetryTimer = setTimeout(() => {
+    hostRetryTimer = undefined;
+    connectToHost();
+  }, 1000);
 }
 
 function acceptConnection(connection) {
@@ -166,7 +171,15 @@ async function join() {
   });
   peer.on('connection', acceptConnection);
   peer.on('call', receiveCall);
-  peer.on('error', error => { setStatus('Falha de conexão', true); notify(error.type === 'unavailable-id' ? 'Esta sala já está ativa em outra aba.' : `Erro P2P: ${error.message}`); });
+  peer.on('error', error => {
+    if (!isHost && !roomJoined && error.type === 'peer-unavailable') {
+      setStatus(`Procurando anfitrião… (${hostRetries}/15)`);
+      scheduleHostRetry();
+      return;
+    }
+    setStatus('Falha de conexão', true);
+    notify(error.type === 'unavailable-id' ? 'Esta sala já está ativa em outra aba.' : `Erro P2P: ${error.message}`);
+  });
 }
 
 ui.join.addEventListener('click', join);
