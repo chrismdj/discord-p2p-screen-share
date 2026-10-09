@@ -11,7 +11,7 @@ const ui = {
   template: document.querySelector('#screen-template'),
 };
 
-let peer, localId, localName, screenStream, hostConnection;
+let peer, localId, localName, screenStream, hostConnection, hostRetries = 0, roomJoined = false;
 const people = new Map(); // peerId -> display name
 const calls = new Map();
 const connections = new Map(); // only host needs these to announce membership
@@ -55,6 +55,51 @@ function announcePeers() {
   if (!isHost) return;
   const payload = { type: 'peers', people: [...people.entries()] };
   connections.forEach(connection => connection.open && connection.send(payload));
+}
+
+function connectToHost() {
+  if (isHost || roomJoined || hostRetries >= 15) {
+    if (!roomJoined && hostRetries >= 15) {
+      setStatus('Anfitrião indisponível', true);
+      notify('O anfitrião ainda não abriu o link privado. Peça para ele entrar primeiro e tente novamente.');
+    }
+    return;
+  }
+
+  hostRetries += 1;
+  setStatus(`Procurando anfitrião… (${hostRetries}/15)`);
+  hostConnection = peer.connect(hostId(), { reliable: true });
+  let opened = false;
+
+  hostConnection.on('open', () => {
+    opened = true;
+    roomJoined = true;
+    setStatus('Conectado à sala');
+    hostConnection.send({ type: 'hello', name: localName });
+  });
+  hostConnection.on('data', data => {
+    if (data?.type === 'room-full') {
+      roomJoined = false;
+      notify('A sala já chegou ao limite de quatro pessoas.');
+      hostConnection.close();
+      return;
+    }
+    if (data?.type !== 'peers') return;
+    people.clear();
+    data.people.forEach(([id, name]) => people.set(id, name));
+    people.set(localId, localName);
+    render();
+    if (screenStream) callEveryone();
+  });
+  hostConnection.on('error', retry);
+  hostConnection.on('close', () => {
+    if (!opened && !roomJoined) retry();
+  });
+
+  function retry() {
+    if (opened || roomJoined) return;
+    setTimeout(connectToHost, 1000);
+  }
 }
 
 function acceptConnection(connection) {
@@ -117,15 +162,7 @@ async function join() {
     ui.joinCard.hidden = true; ui.room.hidden = false; ui.roomLabel.textContent = `Sala ${roomId.slice(0, 6)}`;
     setStatus(isHost ? 'Sala aberta — aguardando amigos' : 'Conectado à sala');
     if (isHost) return;
-    hostConnection = peer.connect(hostId(), { reliable: true });
-    hostConnection.on('open', () => hostConnection.send({ type: 'hello', name: localName }));
-    hostConnection.on('data', data => {
-      if (data?.type === 'room-full') { notify('A sala já chegou ao limite de quatro pessoas.'); hostConnection.close(); return; }
-      if (data?.type !== 'peers') return;
-      people.clear(); data.people.forEach(([id, name]) => people.set(id, name)); people.set(localId, localName); render();
-      if (screenStream) callEveryone();
-    });
-    hostConnection.on('error', () => { setStatus('Anfitrião ainda não está online.', true); notify('Peça ao anfitrião para abrir o link privado primeiro.'); });
+    connectToHost();
   });
   peer.on('connection', acceptConnection);
   peer.on('call', receiveCall);
