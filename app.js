@@ -69,6 +69,8 @@ function connectToHost() {
   hostRetries += 1;
   setStatus(`Procurando anfitrião… (${hostRetries}/15)`);
   hostConnection = peer.connect(hostId(), { reliable: true });
+  // Keep polling even when a failed connection does not emit every PeerJS event.
+  scheduleHostRetry();
   let opened = false;
 
   hostConnection.on('open', () => {
