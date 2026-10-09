@@ -13,7 +13,8 @@ const ui = {
 
 let peer, localId, localName, screenStream, hostConnection, hostRetries = 0, roomJoined = false, hostRetryTimer, signallingRetries = 0;
 const people = new Map(); // peerId -> display name
-const calls = new Map();
+const calls = new Map(); // `${direction}:${peerId}` -> media call
+const remoteStreams = new Map();
 const connections = new Map(); // only host needs these to announce membership
 
 function setStatus(text, problem = false) { ui.status.textContent = text; ui.status.classList.toggle('problem', problem); }
@@ -27,26 +28,37 @@ function render() {
     const item = ui.template.content.firstElementChild.cloneNode(true);
     item.dataset.peerId = id;
     item.querySelector('strong').textContent = id === localId ? `${personName(id)} (você)` : personName(id);
+    item.querySelector('.fullscreen').addEventListener('click', () => item.requestFullscreen?.());
     ui.screens.append(item);
+    const stream = id === localId ? screenStream : remoteStreams.get(id);
+    if (stream) setVideo(id, stream, false);
   });
   ui.count.textContent = `${people.size} de ${maxParticipants} participantes`;
 }
 
-function setVideo(id, stream) {
+function setVideo(id, stream, remember = true) {
+  if (remember && id !== localId) remoteStreams.set(id, stream);
   const video = document.querySelector(`[data-peer-id="${CSS.escape(id)}"] video`);
   if (!video) return;
   video.srcObject = stream;
   video.closest('.screen').classList.add('active');
 }
 
-function closeCall(id) { calls.get(id)?.close(); calls.delete(id); }
+function closeCall(id) {
+  ['out', 'in'].forEach(direction => {
+    const key = `${direction}:${id}`;
+    calls.get(key)?.close();
+    calls.delete(key);
+  });
+}
 
 function callPeer(id) {
-  if (!screenStream || id === localId || calls.has(id)) return;
+  const key = `out:${id}`;
+  if (!screenStream || id === localId || calls.has(key)) return;
   const call = peer.call(id, screenStream, { metadata: { name: localName } });
-  calls.set(id, call);
-  call.on('close', () => calls.delete(id));
-  call.on('error', () => calls.delete(id));
+  calls.set(key, call);
+  call.on('close', () => calls.delete(key));
+  call.on('error', () => calls.delete(key));
 }
 
 function callEveryone() { [...people.keys()].forEach(callPeer); }
@@ -121,16 +133,17 @@ function acceptConnection(connection) {
   });
   connection.on('close', () => {
     if (!isHost) return;
-    connections.delete(connection.peer); people.delete(connection.peer); closeCall(connection.peer); render(); announcePeers();
+    connections.delete(connection.peer); people.delete(connection.peer); remoteStreams.delete(connection.peer); closeCall(connection.peer); render(); announcePeers();
   });
 }
 
 function receiveCall(call) {
   call.answer();
-  calls.set(call.peer, call);
+  const key = `in:${call.peer}`;
+  calls.set(key, call);
   if (!people.has(call.peer)) { people.set(call.peer, call.metadata?.name || 'Amigo'); render(); }
   call.on('stream', stream => setVideo(call.peer, stream));
-  call.on('close', () => calls.delete(call.peer));
+  call.on('close', () => { calls.delete(key); remoteStreams.delete(call.peer); render(); });
 }
 
 async function startSharing() {
@@ -152,7 +165,7 @@ async function startSharing() {
 
 function stopSharing() {
   screenStream?.getTracks().forEach(track => track.stop()); screenStream = undefined;
-  [...calls.keys()].forEach(closeCall);
+  [...calls.entries()].filter(([key]) => key.startsWith('out:')).forEach(([key, call]) => { call.close(); calls.delete(key); });
   const card = document.querySelector(`[data-peer-id="${CSS.escape(localId)}"]`);
   if (card) { card.querySelector('video').srcObject = null; card.classList.remove('active'); }
   ui.share.textContent = 'Compartilhar minha tela'; notify('Seu compartilhamento foi encerrado.');
