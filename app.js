@@ -2,6 +2,11 @@ const params = new URLSearchParams(location.search);
 const roomId = params.get('room');
 const isHost = params.get('host') === '1';
 const maxParticipants = 12;
+// PeerJS aceita somente IDs alfanuméricos de forma consistente. Mantemos o código
+// visível da sala, mas o convertemos deterministicamente para a sinalização.
+const peerRoomId = roomId
+  ? `r${Array.from(new TextEncoder().encode(roomId)).map(byte => byte.toString(16).padStart(2, '0')).join('')}`
+  : undefined;
 
 const ui = {
   joinCard: document.querySelector('#join-card'), room: document.querySelector('#room'), name: document.querySelector('#name'),
@@ -25,7 +30,7 @@ const mediaPreferences = new Map();
 
 function setStatus(text, problem = false) { ui.status.textContent = text; ui.status.classList.toggle('problem', problem); }
 function notify(text) { ui.notice.textContent = text; ui.joinError.textContent = text; }
-function hostId() { return `${roomId}-host`; }
+function hostId() { return `${peerRoomId}h`; }
 function personName(id) { return people.get(id) ?? (id === localId ? localName : 'Amigo'); }
 function preferencesFor(id) {
   if (!mediaPreferences.has(id)) mediaPreferences.set(id, { muted: id === localId, volume: 1 });
@@ -346,7 +351,7 @@ function startPeer() {
 async function join() {
   if (!roomId) { setStatus('Link inválido: falta o identificador da sala.', true); return; }
   localName = ui.name.value.trim() || 'Amigo';
-  localId = isHost ? hostId() : `${roomId}-${crypto.randomUUID().slice(0, 8)}`;
+  localId = isHost ? hostId() : `${peerRoomId}g${crypto.randomUUID().replaceAll('-', '').slice(0, 12)}`;
   signallingRetries = 0;
   ui.joinError.textContent = '';
   ui.join.disabled = true; setStatus('Conectando à sinalização…');
