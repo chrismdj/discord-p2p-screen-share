@@ -172,7 +172,7 @@ async function join() {
   peer.on('connection', acceptConnection);
   peer.on('call', receiveCall);
   peer.on('error', error => {
-    if (!isHost && !roomJoined && error.type === 'peer-unavailable') {
+    if (!isHost && !roomJoined && (error.type === 'peer-unavailable' || /Could not connect to peer/.test(error.message))) {
       setStatus(`Procurando anfitrião… (${hostRetries}/15)`);
       scheduleHostRetry();
       return;
